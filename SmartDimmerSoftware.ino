@@ -1,7 +1,23 @@
 
-#include "ModbusRtu.h"
+#include "modbus_slave/ModbusRtu.h"
 #include "Arduino.h"
 #define BOARD_ID 1
+
+#define CH_1_OT_LED 13
+#define CH_1_OC_LED 6
+#define CH_1_CTL 5
+#define CH_1_MANUAL_SW 10
+#define CH_2_OT_LED 8
+#define CH_2_OC_LED 12
+#define CH_2_CTL 9
+#define CH_2_MANUAL_SW 11
+#define AMP_SENSE_POS A0
+#define AMP_SENSE_NEG A4
+#define VCC_HALF_SENSE A5
+#define CS_1 A2
+#define TS_1 A3
+#define CS_2 A1
+#define TS_2 A8
 #define btnPin  2   // номер входа, подключенный к кнопке
 #define stlPin  13  // номер выхода индикатора работы
                     // расположен на плате Arduino
@@ -10,6 +26,7 @@
 //Задаём ведомому адрес, последовательный порт, выход управления TX
 //uint8_t BOARD_ID = 1;
 Modbus slave(BOARD_ID, 0, 0); 
+boolean phase;
 boolean led;
 int8_t state = 0;
 unsigned long tempus;
