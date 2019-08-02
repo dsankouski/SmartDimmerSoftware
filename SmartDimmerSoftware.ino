@@ -1,4 +1,4 @@
-
+#include <analogComp.h>
 #include "modbus_slave/ModbusRtu.h"
 #include "Arduino.h"
 #define BOARD_ID 1
@@ -35,6 +35,7 @@ boolean soft_start_ch2;
 int8_t power_setting_ch1;
 int8_t power_setting_ch2;
 int8_t state = 0;
+int8_t zero_cross_count = 0;
 unsigned long tempus;
 
 // массив данных modbus
@@ -69,6 +70,9 @@ void setup() {
   // зажигаем светодиод на 100 мс
   tempus = millis() + 100; 
   digitalWrite(stlPin, HIGH );
+  // INTERNAL_REFERENCE should be replaced with AIN+
+  analogComparator.setOn(INTERNAL_REFERENCE, A7);
+  analogComparator.enableInterrupt(zero_crossing_handler, CHANGE);
 }
 
 void io_setup() {
@@ -107,4 +111,8 @@ void io_poll() {
   digitalWrite( CH_1_CTL, bitRead( au16data[1], 2 ));
 
 
+}
+
+void zero_crossing_handler() {
+  digitalWrite(stlPin, !digitalRead(stlPin));
 }
