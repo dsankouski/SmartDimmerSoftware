@@ -253,10 +253,10 @@ Modbus::Modbus(uint8_t u8id, uint8_t u8serno, uint8_t u8txenpin) {
  */
 void Modbus::begin(long u32speed) {
 
-  // Serial.begin(u32speed, u8config);
-  Serial.begin(u32speed);
+  // Serial1.begin(u32speed, u8config);
+  Serial1.begin(u32speed);
 
-  Serial.flush();
+  Serial1.flush();
   u8lastRec = u8BufferSize = 0;
   u16InCnt = u16OutCnt = u16errCnt = 0;
 }
@@ -487,7 +487,7 @@ int8_t Modbus::query( modbus_t telegram ) {
  */
 int8_t Modbus::poll() {
   // check if there is any incoming frame
-  uint8_t u8current = Serial.available();  
+  uint8_t u8current = Serial1.available();  
 
   if (millis() > u32timeOut) {
     u8state = COM_IDLE;
@@ -566,7 +566,7 @@ int8_t Modbus::poll( uint16_t *regs, uint8_t u8size ) {
   u8regsize = u8size;
 
   // check if there is any incoming frame
-  uint8_t u8current = Serial.available();  
+  uint8_t u8current = Serial1.available();  
   if (u8current == 0) return 0;
 
   // check T35 after frame end or still no frame end
@@ -649,8 +649,8 @@ int8_t Modbus::getRxBuffer() {
   //if (u8txenpin > 1) digitalWrite( u8txenpin, LOW );
 
   u8BufferSize = 0;
-  while ( Serial.available() ) {
-    au8Buffer[ u8BufferSize ] = Serial.read();
+  while ( Serial1.available() ) {
+    au8Buffer[ u8BufferSize ] = Serial1.read();
     u8BufferSize ++;
 
     if (u8BufferSize >= MAX_BUFFER) bBuffOverflow = true;
@@ -687,9 +687,9 @@ void Modbus::sendTxBuffer() {
   u8BufferSize++;
 
   // transfer buffer to serial line
-  Serial.write( au8Buffer, u8BufferSize );
+  Serial1.write( au8Buffer, u8BufferSize );
 
-  Serial.flush();
+  Serial1.flush();
   u8BufferSize = 0;
 
   // set time-out for master
