@@ -5,10 +5,12 @@
 
 #define CH_1_OT_LED 13
 #define CH_1_OC_LED 6
+// Channel 1 thyristor control output
 #define CH_1_CTL 5
 #define CH_1_MANUAL_SW 10
 #define CH_2_OT_LED 8
 #define CH_2_OC_LED 12
+// Channel 2 thyristor control output
 #define CH_2_CTL 9
 #define CH_2_MANUAL_SW 11
 #define AMP_SENSE_POS A0
@@ -28,14 +30,38 @@
 Modbus slave(BOARD_ID, 0, 0); 
 boolean phase;
 boolean led;
+boolean soft_start_ch1;
+boolean soft_start_ch2;
+int8_t power_setting_ch1;
+int8_t power_setting_ch2;
 int8_t state = 0;
 unsigned long tempus;
 
 // массив данных modbus
-uint16_t au16data[11];
+/*
+ * +------------------------------------------------------------------------------
+ * | Register   Bit  Name                   Type      Modbus addr  Access
+ * +------------------------------------------------------------------------------
+ * |au16data[0]                             Discrete               Read
+ * |            0     CH_1_OT_LED                      0           Read
+ * |            1     CH_1_OC_LED                       1          Read
+ * |            2     CH_1_MANUAL_SW                     2         Read
+ * |            3     CH_2_OT_LED                         3        Read
+ * |            4     CH_2_OC_LED                          4       Read
+ * |            5     CH_2_MANUAL_SW                        5      Read
+ * +-----------------------------------------------------------------------------
+ * |au16data[1] 0     soft_start_ch1        Coil            8
+ * |            1     soft_start_ch2        Coil            9
+ * |            2     CH_1_CTL        Coil            10
+ * |            3     CH_2_CTL        Coil            11
+ * +-----------------------------------------------------------------------------
+ * |au16data[2]       power_setting_ch1     Holding         6
+ * |au16data[3]       power_setting_ch1     Holding         7
+ */
+uint16_t au16data[3];
 
 void setup() {
-  //slave.setID(BOARD_ID);
+//  slave.setID(BOARD_ID);
   // настраиваем входы и выходы
   io_setup();
   // настраиваем последовательный порт ведомого
@@ -47,15 +73,17 @@ void setup() {
 
 void io_setup() {
   digitalWrite(stlPin, HIGH ); 
-  digitalWrite(ledPin, LOW ); 
+  digitalWrite(ledPin, HIGH );
+  digitalWrite(CH_1_CTL, HIGH); 
   pinMode(stlPin, OUTPUT); 
   pinMode(ledPin, OUTPUT);   
   pinMode(btnPin, INPUT);  
+  pinMode(CH_1_CTL, OUTPUT);   
 }
 
 void loop() {
   // обработка сообщений
-  state = slave.poll( au16data, 11);  
+  state = slave.poll( au16data, 3);
   // если получили пакет без ошибок - зажигаем светодиод на 50 мс 
   if (state > 4) {
     tempus = millis() + 50;
@@ -67,18 +95,16 @@ void loop() {
 } 
 
 void io_poll() {
-  //Копируем Coil[1] в Discrete[0]
-  au16data[0] = au16data[1];
-  //Выводим значение регистра 1.3 на светодиод 
-  digitalWrite( ledPin, bitRead( au16data[1], 3 ));
-  //Сохраняем состояние кнопки в регистр 0.3
-  bitWrite( au16data[0], 3, digitalRead( btnPin ));
-  //Копируем Holding[5,6,7] в Input[2,3,4]
-  au16data[2] = au16data[5];
-  au16data[3] = au16data[6];
-  au16data[4] = au16data[7];
-  //Сохраняем в регистры отладочную информацию
-  au16data[8] = slave.getInCnt();
-  au16data[9] = slave.getOutCnt();
-  au16data[10] = slave.getErrCnt();
+  uint16_t status = digitalRead(CH_1_OT_LED   );
+  status += digitalRead(CH_1_OC_LED   ) << 1;
+  status += digitalRead(CH_1_MANUAL_SW) << 2;
+  status += digitalRead(CH_2_OT_LED   ) << 3;
+  status += digitalRead(CH_2_OC_LED   ) << 4;
+  status += digitalRead(CH_2_MANUAL_SW) << 5;
+
+  au16data[0] = status;
+  digitalWrite( ledPin, bitRead( au16data[1], 2 ));
+  digitalWrite( CH_1_CTL, bitRead( au16data[1], 2 ));
+
+
 }
