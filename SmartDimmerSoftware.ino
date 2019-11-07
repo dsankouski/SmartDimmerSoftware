@@ -5,12 +5,12 @@
 
 #define CH_1_OT_LED 13
 #define CH_1_OC_LED 6
-// Channel 1 thyristor control output
+// Channel 1 switch control output
 #define CH_1_CTL 5
 #define CH_1_MANUAL_SW 10
 #define CH_2_OT_LED 12
 #define CH_2_OC_LED 8
-// Channel 2 thyristor control output
+// Channel 2 switch control output
 #define CH_2_CTL 9
 #define CH_2_MANUAL_SW 11
 #define AMP_SENSE_POS A0
@@ -21,15 +21,13 @@
 #define CS_2 A1
 #define TS_2 A8
 
+#define MANUAL_SW_MASK 4
+
 Modbus slave(BOARD_ID, 0, 0);
-boolean soft_start_ch1;
-boolean soft_start_ch2;
-boolean is_ch1_manual_on = false;
-boolean is_ch2_manual_on = false;
-boolean is_ch1_auto_on = false;
-boolean is_ch2_auto_on = false;
-int8_t power_setting_ch1;
-int8_t power_setting_ch2;
+uint8_t ch_1_ctl_remote_sw;
+uint8_t ch_2_ctl_remote_sw;
+int16_t power_setting_ch1;
+int16_t power_setting_ch2;
 
 /*
  * Modbus data table
@@ -41,19 +39,31 @@ int8_t power_setting_ch2;
  * |            0     CH_1_OT_LED                      0           Read
  * |            1     CH_1_OC_LED                      1           Read
  * |            2     CH_1_MANUAL_SW                   2           Read
+ * |            3     CH_1_OUTPUT                      2           Read
+ * |au16data[1]
  * |            8     CH_2_OT_LED                      8           Read
  * |            9     CH_2_OC_LED                      9           Read
  * |            10    CH_2_MANUAL_SW                   10          Read
+ * |            11    CH_2_OUTPUT                      10          Read
+ * |au16data[2]                             Discrete
+ * |            32    power_reading_ch1
+ * |au16data[3]                             Discrete
+ * |            48    power_reading_ch2
+ * |au16data[4]
+ * |            64    CH_1_CTL                         17          Read/Write
+ * |au16data[5]
+ * |            80    CH_2_CTL                         25          Read/Write
+ * |au16data[6]
+ * |            96    soft_start_ch1        Holding    16          Read/Write
+ * |au16data[7]
+ * |            112   soft_start_ch2        Holding    16          Read/Write
+ * |au16data[8]
+ * |            128   power_setting_ch1     Holding    32          Read/Write
+ * |au16data[9]
+ * |            144   power_setting_ch2     Holding    32          Read/Write
  * +-----------------------------------------------------------------------------
- * |au16data[1] 16    soft_start_ch1        Coil       16          Read/Write
- * |            17    CH_1_CTL              Coil       17          Read/Write
- * |            24    soft_start_ch2        Coil       24          Read/Write
- * |            25    CH_2_CTL              Coil       25          Read/Write
- * +-----------------------------------------------------------------------------
- * |au16data[2]       power_setting_ch1     Holding    32          Read/Write
- * |au16data[3]       power_setting_ch1     Holding    48          Read/Write
  */
-uint16_t au16data[3];
+uint16_t au16data[10];
 
 void setup() {
   io_setup();
@@ -65,10 +75,10 @@ void setup() {
 }
 
 void io_setup() {
-  digitalWrite(CH_1_CTL, HIGH); 
+  digitalWrite(CH_1_CTL, HIGH);
   digitalWrite(CH_2_CTL, HIGH);
-  digitalWrite(CH_2_OT_LED, LOW);
   digitalWrite(CH_1_OT_LED, LOW);
+  digitalWrite(CH_2_OT_LED, LOW);
   digitalWrite(CH_1_OC_LED, HIGH);
   digitalWrite(CH_2_OC_LED, HIGH);
 
@@ -91,24 +101,29 @@ void loop() {
 }
 
 void io_poll() {
-  is_ch1_manual_on = digitalRead(CH_1_MANUAL_SW);
-  is_ch2_manual_on = digitalRead(CH_2_MANUAL_SW);
+  uint8_t ch_1_ctl = 0;
+  uint8_t ch_2_ctl = 0;
 
   uint8_t status_ch1;
   status_ch1 = digitalRead(CH_1_OT_LED);
   status_ch1 += digitalRead(CH_1_OC_LED) << 1;
-  status_ch1 += is_ch1_manual_on << 2;
+  status_ch1 += digitalRead(CH_1_MANUAL_SW) << 2;
+  status_ch1 += digitalRead(CH_1_CTL) << 3;
 
   uint8_t status_ch2;
   status_ch2 = digitalRead(CH_2_OT_LED);
-  status_ch2 += digitalRead(CH_2_OC_LED) << 1;
-  status_ch2 += is_ch2_manual_on << 2;
+  status_ch2 += digitalRead(CH_2_OC_LED) << 8 << 1;
+  status_ch2 += digitalRead(CH_2_MANUAL_SW) << 8 << 2;
+  status_ch2 += digitalRead(CH_2_CTL) << 8 << 3;
 
-  au16data[0] = status_ch1 + (status_ch2 << 8);
+  ch_1_ctl = ((status_ch1 & MANUAL_SW_MASK) > (au16data[0] & MANUAL_SW_MASK)) | (au16data[4] > ch_1_ctl_remote_sw);
+  ch_2_ctl = ((status_ch2 & MANUAL_SW_MASK) > (au16data[1] & MANUAL_SW_MASK)) | (au16data[5] > ch_2_ctl_remote_sw);
 
-  is_ch1_auto_on = (au16data[1] & ( 1 << 1 )) >> 1;
-  is_ch2_auto_on = (au16data[1] & ( 1 << 9 )) >> 9;
+  au16data[0] = status_ch1;
+  au16data[1] = status_ch2;
+  ch_1_ctl_remote_sw = au16data[4];
+  ch_2_ctl_remote_sw = au16data[5];
 
-  digitalWrite(CH_1_CTL, is_ch1_manual_on & is_ch1_auto_on);
-  digitalWrite(CH_2_CTL, is_ch2_manual_on & is_ch2_auto_on);
+  digitalWrite(CH_1_CTL, ch_1_ctl);
+  digitalWrite(CH_2_CTL, ch_2_ctl);
 }
