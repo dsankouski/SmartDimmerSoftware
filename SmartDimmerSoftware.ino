@@ -28,6 +28,7 @@ uint8_t ch_1_ctl_remote_sw;
 uint8_t ch_2_ctl_remote_sw;
 int16_t power_setting_ch1;
 int16_t power_setting_ch2;
+uint8_t debug_time_counter = 0;
 
 /*
  * Modbus data table
@@ -68,6 +69,7 @@ uint16_t au16data[10];
 void setup() {
   io_setup();
   slave.begin( 19200 );
+  Serial.begin( 19200 );
 
   analogReference(INTERNAL);
   //Turn on adc
@@ -96,8 +98,22 @@ void io_setup() {
 }
 
 void loop() {
-  slave.poll( au16data, 3);
+  debug_time_counter++;
+  if (debug_time_counter == 200) {
+    Serial.write(27);       // ESC command
+    Serial.print("[2J");    // clear screen command
+    Serial.write(27);
+    Serial.print("[H");     // cursor to home command
+  }
+  slave.poll( au16data, 10);
+  if (debug_time_counter == 200) {
+    dump_modbus_data();
+  }
   io_poll();
+
+  if (debug_time_counter == 200) {
+    debug_time_counter = 0;
+  }
 }
 
 void io_poll() {
@@ -116,7 +132,7 @@ void io_poll() {
   status_ch2 += digitalRead(CH_2_MANUAL_SW) << 8 << 2;
   status_ch2 += digitalRead(CH_2_CTL) << 8 << 3;
 
-  ch_1_ctl = ((status_ch1 & MANUAL_SW_MASK) > (au16data[0] & MANUAL_SW_MASK)) | (au16data[4] > ch_1_ctl_remote_sw);
+  ch_1_ctl = should_activate_channel(status_ch1 & MANUAL_SW_MASK, au16data[0] & MANUAL_SW_MASK, au16data[4], ch_1_ctl_remote_sw);
   ch_2_ctl = ((status_ch2 & MANUAL_SW_MASK) > (au16data[1] & MANUAL_SW_MASK)) | (au16data[5] > ch_2_ctl_remote_sw);
 
   au16data[0] = status_ch1;
@@ -126,4 +142,30 @@ void io_poll() {
 
   digitalWrite(CH_1_CTL, ch_1_ctl);
   digitalWrite(CH_2_CTL, ch_2_ctl);
+}
+
+uint8_t should_activate_channel(uint8_t man_sw_old, uint8_t man_sw_new, uint16_t prog_sw_old, uint16_t prog_sw_new) {
+	if (debug_time_counter == 200) {
+        Serial.print("man_sw_old: ");
+        Serial.println(man_sw_old, BIN);
+        Serial.print("man_sw_new: ");
+        Serial.println(man_sw_new, BIN);
+        Serial.print("prog_sw_old: ");
+        Serial.println(prog_sw_old, BIN);
+        Serial.print("prog_sw_new: ");
+        Serial.println(prog_sw_new, BIN);
+    }
+	return (man_sw_new != man_sw_old) & (man_sw_new) | prog_sw_new > prog_sw_old;
+}
+
+void dump_modbus_data() {
+	Serial.print("Modbus data array:\n");
+	for (uint8_t i = 0; i < sizeof(au16data) / 2; i++) {
+		Serial.print("reg ");
+		Serial.print(i);
+		Serial.print(": ");
+		Serial.println(au16data[i], BIN);
+	}
+
+	Serial.print("###################\n");
 }
