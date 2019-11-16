@@ -24,8 +24,8 @@
 #define MANUAL_SW_MASK 4
 
 Modbus slave(BOARD_ID, 0, 0);
-uint8_t ch_1_ctl_remote_sw;
-uint8_t ch_2_ctl_remote_sw;
+uint16_t ch_1_ctl_remote_sw = 0;
+uint16_t ch_2_ctl_remote_sw = 0;
 int16_t power_setting_ch1;
 int16_t power_setting_ch2;
 uint8_t debug_time_counter = 0;
@@ -66,14 +66,76 @@ uint8_t debug_time_counter = 0;
  */
 uint16_t au16data[10];
 
-void setup() {
-  io_setup();
-  slave.begin( 19200 );
-  Serial.begin( 19200 );
 
-  analogReference(INTERNAL);
-  //Turn on adc
-  analogRead(A0);
+#ifdef DEBUG_ENABLE
+void dump_modbus_data() {
+	Serial.print("Modbus data array:\n");
+	for (uint8_t i = 0; i < sizeof(au16data) / 2; i++) {
+		Serial.print("reg ");
+		Serial.print(i);
+		Serial.print(": ");
+		Serial.println(au16data[i], BIN);
+	}
+
+	Serial.print("###################\n");
+}
+#endif
+
+void io_poll() {
+  uint8_t man_sw_control_ch1 = digitalRead(CH_1_MANUAL_SW);
+  uint8_t man_sw_control_ch2 = digitalRead(CH_2_MANUAL_SW);
+  uint8_t man_sw_control_ch1_old = (au16data[0] & MANUAL_SW_MASK) >> 2;
+  uint8_t man_sw_control_ch2_old = (au16data[1] & MANUAL_SW_MASK) >> 2;
+
+  uint8_t status_ch1;
+  status_ch1 = digitalRead(CH_1_OT_LED);
+  status_ch1 += digitalRead(CH_1_OC_LED) << 1;
+  status_ch1 += man_sw_control_ch1 << 2;
+  status_ch1 += digitalRead(CH_1_CTL) << 3;
+
+  uint8_t status_ch2;
+  status_ch2 = digitalRead(CH_2_OT_LED);
+  status_ch2 += digitalRead(CH_2_OC_LED) << 1;
+  status_ch2 += man_sw_control_ch2 << 2;
+  status_ch2 += digitalRead(CH_2_CTL) << 3;
+
+  if (man_sw_control_ch1 != man_sw_control_ch1_old) {
+    #ifdef DEBUG_ENABLE
+    Serial.print("channel 1 set by manual switch to: ");
+    Serial.println(man_sw_control_ch1, BIN);
+    #endif
+
+    digitalWrite(CH_1_CTL, man_sw_control_ch1);
+  }
+  if (man_sw_control_ch2 != man_sw_control_ch2_old) {
+    #ifdef DEBUG_ENABLE
+    Serial.print("channel 2 set by manual switch to: ");
+    Serial.println(man_sw_control_ch2, BIN);
+    #endif
+
+    digitalWrite(CH_2_CTL, man_sw_control_ch2);
+  }
+  if (ch_1_ctl_remote_sw != au16data[4]) {
+    #ifdef DEBUG_ENABLE
+    Serial.print("channel 1 set by modbus to: ");
+    Serial.println(au16data[4] != 0, BIN);
+    #endif
+
+    digitalWrite(CH_1_CTL, au16data[4]);
+  }
+  if (ch_2_ctl_remote_sw != au16data[5]) {
+    #ifdef DEBUG_ENABLE
+    Serial.print("channel 2 set by modbus to: ");
+    Serial.println(au16data[5], BIN);
+    #endif
+
+    digitalWrite(CH_2_CTL, au16data[5] != 0);
+  }
+
+  ch_1_ctl_remote_sw = au16data[4];
+  ch_2_ctl_remote_sw = au16data[5];
+  au16data[0] = status_ch1;
+  au16data[1] = status_ch2;
 }
 
 void io_setup() {
@@ -97,7 +159,20 @@ void io_setup() {
   pinMode(7, INPUT);
 }
 
+void setup() {
+  io_setup();
+  slave.begin( 19200 );
+  #ifdef DEBUG_ENABLE
+  Serial.begin( 19200 );
+  #endif
+
+  analogReference(INTERNAL);
+  //Turn on adc
+  analogRead(A0);
+}
+
 void loop() {
+#ifdef DEBUG_ENABLE
   debug_time_counter++;
   if (debug_time_counter == 200) {
     Serial.write(27);       // ESC command
@@ -105,67 +180,20 @@ void loop() {
     Serial.write(27);
     Serial.print("[H");     // cursor to home command
   }
+  #endif
+
   slave.poll( au16data, 10);
+
+  #ifdef DEBUG_ENABLE
   if (debug_time_counter == 200) {
     dump_modbus_data();
   }
+  #endif
   io_poll();
 
+  #ifdef DEBUG_ENABLE
   if (debug_time_counter == 200) {
     debug_time_counter = 0;
   }
-}
-
-void io_poll() {
-  uint8_t ch_1_ctl = 0;
-  uint8_t ch_2_ctl = 0;
-
-  uint8_t status_ch1;
-  status_ch1 = digitalRead(CH_1_OT_LED);
-  status_ch1 += digitalRead(CH_1_OC_LED) << 1;
-  status_ch1 += digitalRead(CH_1_MANUAL_SW) << 2;
-  status_ch1 += digitalRead(CH_1_CTL) << 3;
-
-  uint8_t status_ch2;
-  status_ch2 = digitalRead(CH_2_OT_LED);
-  status_ch2 += digitalRead(CH_2_OC_LED) << 8 << 1;
-  status_ch2 += digitalRead(CH_2_MANUAL_SW) << 8 << 2;
-  status_ch2 += digitalRead(CH_2_CTL) << 8 << 3;
-
-  ch_1_ctl = should_activate_channel(status_ch1 & MANUAL_SW_MASK, au16data[0] & MANUAL_SW_MASK, au16data[4], ch_1_ctl_remote_sw);
-  ch_2_ctl = ((status_ch2 & MANUAL_SW_MASK) > (au16data[1] & MANUAL_SW_MASK)) | (au16data[5] > ch_2_ctl_remote_sw);
-
-  au16data[0] = status_ch1;
-  au16data[1] = status_ch2;
-  ch_1_ctl_remote_sw = au16data[4];
-  ch_2_ctl_remote_sw = au16data[5];
-
-  digitalWrite(CH_1_CTL, ch_1_ctl);
-  digitalWrite(CH_2_CTL, ch_2_ctl);
-}
-
-uint8_t should_activate_channel(uint8_t man_sw_old, uint8_t man_sw_new, uint16_t prog_sw_old, uint16_t prog_sw_new) {
-	if (debug_time_counter == 200) {
-        Serial.print("man_sw_old: ");
-        Serial.println(man_sw_old, BIN);
-        Serial.print("man_sw_new: ");
-        Serial.println(man_sw_new, BIN);
-        Serial.print("prog_sw_old: ");
-        Serial.println(prog_sw_old, BIN);
-        Serial.print("prog_sw_new: ");
-        Serial.println(prog_sw_new, BIN);
-    }
-	return (man_sw_new != man_sw_old) & (man_sw_new) | prog_sw_new > prog_sw_old;
-}
-
-void dump_modbus_data() {
-	Serial.print("Modbus data array:\n");
-	for (uint8_t i = 0; i < sizeof(au16data) / 2; i++) {
-		Serial.print("reg ");
-		Serial.print(i);
-		Serial.print(": ");
-		Serial.println(au16data[i], BIN);
-	}
-
-	Serial.print("###################\n");
+  #endif
 }
