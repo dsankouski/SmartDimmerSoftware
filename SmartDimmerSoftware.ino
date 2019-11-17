@@ -99,6 +99,10 @@ void io_poll() {
   status_ch2 += man_sw_control_ch2 << 2;
   status_ch2 += digitalRead(CH_2_CTL) << 3;
 
+  au16data[6] = analogRead(TS_1);
+  au16data[7] = analogRead(TS_2);
+  au16data[8] = analogRead(CS_1);
+
   if (man_sw_control_ch1 != man_sw_control_ch1_old) {
     #ifdef DEBUG_ENABLE
     Serial.print("channel 1 set by manual switch to: ");
@@ -121,7 +125,7 @@ void io_poll() {
     Serial.println(au16data[4] != 0, BIN);
     #endif
 
-    digitalWrite(CH_1_CTL, au16data[4]);
+    digitalWrite(CH_1_CTL, au16data[4] == 0);
   }
   if (ch_2_ctl_remote_sw != au16data[5]) {
     #ifdef DEBUG_ENABLE
@@ -129,7 +133,7 @@ void io_poll() {
     Serial.println(au16data[5], BIN);
     #endif
 
-    digitalWrite(CH_2_CTL, au16data[5] != 0);
+    digitalWrite(CH_2_CTL, au16data[5] == 0);
   }
 
   ch_1_ctl_remote_sw = au16data[4];
@@ -157,6 +161,13 @@ void io_setup() {
   pinMode(CH_1_MANUAL_SW, INPUT_PULLUP);
   pinMode(CH_2_MANUAL_SW, INPUT_PULLUP);
   pinMode(7, INPUT);
+  pinMode(TS_1, INPUT);
+  pinMode(TS_2, INPUT);
+  pinMode(CS_1, INPUT);
+  pinMode(CS_2, INPUT);
+  pinMode(AMP_SENSE_POS, INPUT);
+  pinMode(AMP_SENSE_NEG, INPUT);
+  pinMode(VCC_HALF_SENSE, INPUT);
 }
 
 void setup() {
