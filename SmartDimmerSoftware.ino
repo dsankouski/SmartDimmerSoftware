@@ -19,7 +19,7 @@
 #define CS_1 A2
 #define TS_1 A3
 #define CS_2 A1
-#define TS_2 A8
+#define TS_2 A6
 
 #define MANUAL_SW_MASK 4
 
