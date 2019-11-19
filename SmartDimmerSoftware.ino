@@ -1,6 +1,7 @@
 #include "modbus_slave/ModbusRtu.h"
 #include "Arduino.h"
 
+#define DEBUG_ENABLE
 #define BOARD_ID 1
 
 #define CH_1_OT_LED 13
@@ -96,8 +97,8 @@ void dump_modbus_data() {
 void io_poll() {
   uint8_t man_sw_control_ch1 = digitalRead(CH_1_MANUAL_SW);
   uint8_t man_sw_control_ch2 = digitalRead(CH_2_MANUAL_SW);
-  uint8_t man_sw_control_ch1_old = (au16data[0] & MANUAL_SW_MASK) >> 2;
-  uint8_t man_sw_control_ch2_old = (au16data[1] & MANUAL_SW_MASK) >> 2;
+  uint8_t man_sw_control_ch1_old = (au16data[2] & MANUAL_SW_MASK) >> 2;
+  uint8_t man_sw_control_ch2_old = (au16data[3] & MANUAL_SW_MASK) >> 2;
 
   uint8_t status_ch1;
   status_ch1 = digitalRead(CH_1_OT_LED);
