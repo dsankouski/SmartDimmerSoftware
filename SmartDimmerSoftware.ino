@@ -1,7 +1,9 @@
 #include "modbus_slave/ModbusRtu.h"
+#include "analogComp.h"
 #include "Arduino.h"
 
 #define BOARD_ID 1
+#define DEBUG_ENABLE
 
 #define CH_1_OT_LED 13
 #define CH_1_OC_LED 6
@@ -26,6 +28,8 @@
 Modbus slave(BOARD_ID, 0, 0);
 uint16_t ch_1_ctl_remote_sw = 0;
 uint16_t ch_2_ctl_remote_sw = 0;
+
+volatile uint8_t counter = 1;
 
 #ifdef DEBUG_ENABLE
 uint8_t debug_time_counter = 0;
@@ -115,6 +119,7 @@ void io_poll() {
   au16data[6] = analogRead(CS_2);
   au16data[7] = analogRead(TS_1);
   au16data[8] = analogRead(TS_2);
+  au16data[9] = counter;
 
   if (man_sw_control_ch1 != man_sw_control_ch1_old) {
     digitalWrite(CH_1_CTL, man_sw_control_ch1);
@@ -173,6 +178,11 @@ void setup() {
   analogReference(INTERNAL);
   //Turn on adc (needed to init internal analogReference)
   analogRead(A0);
+
+  // INTERNAL_REFERENCE should be replaced with AIN+
+  // AIN+ -> PE6 pin
+    analogComparator.setOn(AIN0, INTERNAL_REFERENCE);
+    analogComparator.enableInterrupt(zero_crossing_handler, CHANGE);
 }
 
 void loop() {
@@ -200,4 +210,8 @@ void loop() {
     debug_time_counter = 0;
   }
   #endif
+}
+
+void zero_crossing_handler() {
+	counter++;
 }
