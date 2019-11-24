@@ -84,7 +84,7 @@ uint16_t au16data[15];
 
 #ifdef DEBUG_ENABLE
 void dump_modbus_data() {
-	Serial.print("Modbus data array:\n");
+	Serial.print("Modbus data array:");
 	Serial.println();
 	for (uint8_t i = 0; i < sizeof(au16data) / 2; i++) {
 		Serial.print("reg ");
@@ -93,15 +93,15 @@ void dump_modbus_data() {
 		Serial.println(au16data[i], BIN);
 	}
 
-	Serial.print("###################\n");
+	Serial.println("###################");
 }
 #endif
 
 void io_poll() {
   uint8_t man_sw_control_ch1 = digitalRead(CH_1_MANUAL_SW);
   uint8_t man_sw_control_ch2 = digitalRead(CH_2_MANUAL_SW);
-  uint8_t man_sw_control_ch1_old = (au16data[0] & MANUAL_SW_MASK) >> 2;
-  uint8_t man_sw_control_ch2_old = (au16data[1] & MANUAL_SW_MASK) >> 2;
+  uint8_t man_sw_control_ch1_old = (au16data[2] & MANUAL_SW_MASK) >> 2;
+  uint8_t man_sw_control_ch2_old = (au16data[3] & MANUAL_SW_MASK) >> 2;
 
   uint8_t status_ch1;
   status_ch1 = digitalRead(CH_1_OT_LED);
@@ -170,9 +170,9 @@ void io_setup() {
 
 void setup() {
   io_setup();
-  slave.begin( 19200 );
+  slave.begin( 115200 );
   #ifdef DEBUG_ENABLE
-  Serial.begin( 19200 );
+  Serial.begin( 115200 );
   #endif
 
   analogReference(INTERNAL);
@@ -181,8 +181,11 @@ void setup() {
 
   // INTERNAL_REFERENCE should be replaced with AIN+
   // AIN+ -> PE6 pin
-    analogComparator.setOn(AIN0, INTERNAL_REFERENCE);
-    analogComparator.enableInterrupt(zero_crossing_handler, CHANGE);
+  analogComparator.setOn(AIN0, INTERNAL_REFERENCE);
+  analogComparator.enableInterrupt(zero_crossing_handler, CHANGE);
+
+  //     Turn on ADC again after comparator setup
+  ADCSRA |= 1 << 7;
 }
 
 void loop() {
