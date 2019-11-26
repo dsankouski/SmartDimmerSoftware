@@ -1,5 +1,7 @@
 #include "modbus_slave/ModbusRtu.h"
 #include "Arduino.h"
+#include <util/atomic.h> // this library includes the ATOMIC_BLOCK macro.
+#include <PinChangeInterrupt.h>
 
 #define BOARD_ID 1
 
@@ -76,6 +78,8 @@ uint8_t debug_time_counter = 0;
  * +-----------------------------------------------------------------------------
  */
 uint16_t au16data[15];
+volatile uint8_t *status_ch1 = (uint8_t) &au16data[2];
+volatile uint8_t *status_ch2 = (uint8_t) &au16data[3];
 
 
 #ifdef DEBUG_ENABLE
@@ -135,6 +139,27 @@ void io_poll() {
   au16data[3] = status_ch2;
 }
 
+void manual_switch_down_1_ISR() {
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    *status_ch1 &= ~(MANUAL_SW_MASK);
+  }
+}
+void manual_switch_up_1_ISR() {
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    *status_ch1 |= MANUAL_SW_MASK;
+  }
+}
+void manual_switch_down_2_ISR() {
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    *status_ch2 &= ~(MANUAL_SW_MASK);
+  }
+}
+void manual_switch_up_2_ISR() {
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+    *status_ch2 |= MANUAL_SW_MASK;
+  }
+}
+
 void io_setup() {
   digitalWrite(CH_1_CTL, HIGH);
   digitalWrite(CH_2_CTL, HIGH);
@@ -161,6 +186,11 @@ void io_setup() {
   pinMode(AMP_SENSE_POS, INPUT);
   pinMode(AMP_SENSE_NEG, INPUT);
   pinMode(VCC_HALF_SENSE, INPUT);
+
+  attachPinChangeInterrupt(digitalPinToPinChangeInterrupt(CH_1_MANUAL_SW), manual_switch_down_1_ISR, FALLING);
+  attachPinChangeInterrupt(digitalPinToPinChangeInterrupt(CH_1_MANUAL_SW), manual_switch_up_1_ISR, RISING);
+  attachPinChangeInterrupt(digitalPinToPinChangeInterrupt(CH_2_MANUAL_SW), manual_switch_down_2_ISR, FALLING);
+  attachPinChangeInterrupt(digitalPinToPinChangeInterrupt(CH_2_MANUAL_SW), manual_switch_up_2_ISR, RISING);
 }
 
 void setup() {
