@@ -93,6 +93,57 @@ void dump_modbus_data() {
 }
 #endif
 
+/**
+  * This timer is used for determining zero crossing period
+  * todo: switch control pins to control it with 1 timer.
+  */
+void timer_1_setup() {
+/* Clear OCnA/OCnB/OCnC on compare match, set OCnA/OCnB/OCnC at TOP */
+// 	TCCR1A |= 1 << COM1A1
+	/* prescaler 1/1024 */
+	/* CSn2:0 = 101 */
+
+	/* Fast PWM , TOP = OCRnA*/
+	TCCR1A |= 1 << WGM11;
+	TCCR1B |= 1 << WGM12;
+	TCCR1B |= 1 << WGM13;
+
+	/* Interrupt on Overflow (TOP), and on input capture*/
+	TIMSK1 |= 1 << TOIE1;
+	TIMSK1 |= 1 << ICIE1;
+	/* Need to enable ACIC in analog comparator */
+	ACSR |= 1 << ACIC;
+}
+
+/* timer capture event */
+ISR(TIMER1_CAPT_vect){
+
+}
+/* timer overflow */
+ISR(TIMER1_OVF_vect){
+
+}
+
+/* *
+ * This timer controls AC phase on channel 1
+ */
+void timer_3_setup() {
+	/* Clear OCnA/OCnB/OCnC on compare match, set OCnA/OCnB/OCnC at TOP */
+    	TCCR3A |= 1 << COM3A1;
+    	/* prescaler 1/1024 */
+    	/* CSn2:0 = 101 */
+
+    	/* Fast PWM , TOP = ICR*/
+    	TCCR3A |= 1 << WGM30;
+    	TCCR3A |= 1 << WGM31;
+    	TCCR3B |= 1 << WGM32;
+    	TCCR3B |= 1 << WGM33;
+
+    	/* Interrupt on Overflow (TOP), OCRnA*/
+//     	TIMSK3 |= 1 << TOIE3
+//     	TIMSK3 |= 1 << OCIE3A
+}
+
 void io_poll() {
   uint8_t man_sw_control_ch1 = digitalRead(CH_1_MANUAL_SW);
   uint8_t man_sw_control_ch2 = digitalRead(CH_2_MANUAL_SW);
@@ -173,6 +224,9 @@ void setup() {
   analogReference(INTERNAL);
   //Turn on adc (needed to init internal analogReference)
   analogRead(A0);
+
+  timer_1_setup();
+  timer_3_setup();
 }
 
 void loop() {
