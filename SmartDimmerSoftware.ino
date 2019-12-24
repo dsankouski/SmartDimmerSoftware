@@ -1,33 +1,52 @@
 #include "modbus_slave/ModbusRtu.h"
 #include "Arduino.h"
+#include "analogComp.h"
+#include <util/atomic.h>
+#include "timer1.h"
+#include "timer3.h"
 
 #define BOARD_ID 1
 
 #define CH_1_OT_LED 13
 #define CH_1_OC_LED 6
 // Channel 1 switch control output
-#define CH_1_CTL 5
-#define CH_1_MANUAL_SW 10
+#define CH_1_OUTPUT 5
+#define CH_1_MANUAL_INPUT 10
 #define CH_2_OT_LED 12
 #define CH_2_OC_LED 8
 // Channel 2 switch control output
-#define CH_2_CTL 9
-#define CH_2_MANUAL_SW 11
-#define AMP_SENSE_POS A0
-#define AMP_SENSE_NEG A4
+#define CH_2_OUTPUT 9
+#define CH_2_MANUAL_INPUT 11
+#define VAC_SENSE_INPUT 7
+#define VAC_SENSE_POS A0
+#define VAC_SENSE_NEG A4
 #define VCC_HALF_SENSE A5
 #define CS_1 A2
 #define TS_1 A3
 #define CS_2 A1
 #define TS_2 A6
+#define trigger_pulse_length 30
 
 #define MANUAL_SW_MASK 4
+#define MODBUS_SERIAL_BAUD_RATE 115200
 
 Modbus slave(BOARD_ID, 0, 0);
+uint8_t is_ch1_on = 0;
+uint8_t is_ch2_on = 0;
 uint16_t ch_1_ctl_remote_sw = 0;
 uint16_t ch_2_ctl_remote_sw = 0;
 
+uint16_t high_length =0;
+uint16_t high_length_previous =0;
+uint16_t low_length =0;
+uint16_t low_length_previous =0;
+uint16_t period = 312;
+uint16_t ch_1_trigger_offset = 0xFFFF;
+uint16_t ch_2_trigger_offset = 0xFFFF;
+
+#define DEBUG_ENABLE
 #ifdef DEBUG_ENABLE
+#define DEBUG_SERIAL_BAUD_RATE 115200
 uint8_t debug_time_counter = 0;
 #endif
 
@@ -38,18 +57,18 @@ uint8_t debug_time_counter = 0;
  * | Register   Bit  Name                   Type      Modbus addr  Access
  * +------------------------------------------------------------------------------
  * |au16data[0]
- * |            0    CH_1_CTL                                     Read/Write
+ * |            0    CH_1_OUTPUT                                     Read/Write
  * |au16data[1]
- * |            16    CH_2_CTL                                     Read/Write
+ * |            16    CH_2_OUTPUT                                     Read/Write
  * |au16data[2]                             Discrete
  * |            0     CH_1_OT_LED                                  Read
  * |            1     CH_1_OC_LED                                  Read
- * |            2     CH_1_MANUAL_SW                               Read
+ * |            2     CH_1_MANUAL_INPUT                               Read
  * |            3     CH_1_OUTPUT                                  Read
  * |au16data[3]
  * |            #     CH_2_OT_LED                                  Read
  * |            #     CH_2_OC_LED                                  Read
- * |            #    CH_2_MANUAL_SW                                Read
+ * |            #    CH_2_MANUAL_INPUT                                Read
  * |            #    CH_2_OUTPUT                                   Read
  * |au16data[4]                             Input
  * |            64    voltage_reading
@@ -86,16 +105,33 @@ void dump_modbus_data() {
 		Serial.print("reg ");
 		Serial.print(i);
 		Serial.print(": ");
-		Serial.println(au16data[i], BIN);
+		Serial.println(au16data[i], DEC);
 	}
 
 	Serial.println("###################");
 }
 #endif
 
+/* analogComparator interrupt */
+void zero_crossing_handler() {
+ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
+	uint16_t tcnt3 = TCNT3;
+	uint16_t tcnt1 = TCNT1;
+    OCR3A = tcnt3 + ch_1_trigger_offset;
+    OCR1A = tcnt1 + ch_2_trigger_offset;
+    }
+
+    TCCR3A &= TOGGLE_ON_COMPARE_3A_AND_MASK;
+    TCCR1A &= TOGGLE_ON_COMPARE_1A_AND_MASK;
+    TIFR1 |= CLEAR_COMPARE_MATCH_1A_MASK;
+    TIFR3 |= CLEAR_COMPARE_MATCH_3A_MASK;
+    TIMSK3 |= OUTPUT_COMPARE_3A_INT_ENABLE_OR_MASK;
+    TIMSK1 |= OUTPUT_COMPARE_1A_INT_ENABLE_OR_MASK;
+}
+
 void io_poll() {
-  uint8_t man_sw_control_ch1 = digitalRead(CH_1_MANUAL_SW);
-  uint8_t man_sw_control_ch2 = digitalRead(CH_2_MANUAL_SW);
+  uint8_t man_sw_control_ch1 = digitalRead(CH_1_MANUAL_INPUT);
+  uint8_t man_sw_control_ch2 = digitalRead(CH_2_MANUAL_INPUT);
   uint8_t man_sw_control_ch1_old = (au16data[2] & MANUAL_SW_MASK) >> 2;
   uint8_t man_sw_control_ch2_old = (au16data[3] & MANUAL_SW_MASK) >> 2;
 
@@ -103,30 +139,32 @@ void io_poll() {
   status_ch1 = digitalRead(CH_1_OT_LED);
   status_ch1 += digitalRead(CH_1_OC_LED) << 1;
   status_ch1 += man_sw_control_ch1 << 2;
-  status_ch1 += digitalRead(CH_1_CTL) << 3;
 
   uint8_t status_ch2;
   status_ch2 = digitalRead(CH_2_OT_LED);
   status_ch2 += digitalRead(CH_2_OC_LED) << 1;
   status_ch2 += man_sw_control_ch2 << 2;
-  status_ch2 += digitalRead(CH_2_CTL) << 3;
 
   au16data[5] = analogRead(CS_1);
   au16data[6] = analogRead(CS_2);
   au16data[7] = analogRead(TS_1);
   au16data[8] = analogRead(TS_2);
+  au16data[9] = period;
+
+  ch_1_trigger_offset = period / 2 - ((period / 2) * au16data[13]) / 100 - 5;
+  ch_2_trigger_offset = period / 2 - ((period / 2) * au16data[14]) / 100 - 5;
 
   if (man_sw_control_ch1 != man_sw_control_ch1_old) {
-    digitalWrite(CH_1_CTL, man_sw_control_ch1);
+    is_ch1_on = man_sw_control_ch1;
   }
   if (man_sw_control_ch2 != man_sw_control_ch2_old) {
-    digitalWrite(CH_2_CTL, man_sw_control_ch2);
+    is_ch2_on = man_sw_control_ch2;
   }
   if (ch_1_ctl_remote_sw != au16data[0]) {
-    digitalWrite(CH_1_CTL, au16data[0] == 0);
+    is_ch1_on = au16data[0];
   }
   if (ch_2_ctl_remote_sw != au16data[1]) {
-    digitalWrite(CH_2_CTL, au16data[1] == 0);
+    is_ch2_on = au16data[1];
   }
 
   ch_1_ctl_remote_sw = au16data[0];
@@ -136,8 +174,8 @@ void io_poll() {
 }
 
 void io_setup() {
-  digitalWrite(CH_1_CTL, HIGH);
-  digitalWrite(CH_2_CTL, HIGH);
+  digitalWrite(CH_1_OUTPUT, HIGH);
+  digitalWrite(CH_2_OUTPUT, HIGH);
   digitalWrite(CH_1_OT_LED, LOW);
   digitalWrite(CH_2_OT_LED, LOW);
   digitalWrite(CH_1_OC_LED, HIGH);
@@ -148,31 +186,47 @@ void io_setup() {
   pinMode(CH_2_OT_LED, OUTPUT);
   pinMode(CH_1_OC_LED, OUTPUT);
   pinMode(CH_2_OC_LED, OUTPUT);
-  pinMode(CH_1_CTL, OUTPUT);
-  pinMode(CH_2_CTL, OUTPUT);
+  pinMode(CH_1_OUTPUT, OUTPUT);
+  pinMode(CH_2_OUTPUT, OUTPUT);
 
-  pinMode(CH_1_MANUAL_SW, INPUT_PULLUP);
-  pinMode(CH_2_MANUAL_SW, INPUT_PULLUP);
+  pinMode(CH_1_MANUAL_INPUT, INPUT_PULLUP);
+  pinMode(CH_2_MANUAL_INPUT, INPUT_PULLUP);
   pinMode(7, INPUT);
   pinMode(TS_1, INPUT);
   pinMode(TS_2, INPUT);
   pinMode(CS_1, INPUT);
   pinMode(CS_2, INPUT);
-  pinMode(AMP_SENSE_POS, INPUT);
-  pinMode(AMP_SENSE_NEG, INPUT);
+  pinMode(VAC_SENSE_POS, INPUT);
+  pinMode(VAC_SENSE_NEG, INPUT);
   pinMode(VCC_HALF_SENSE, INPUT);
 }
 
 void setup() {
   io_setup();
-  slave.begin( 19200 );
+  slave.begin(MODBUS_SERIAL_BAUD_RATE);
   #ifdef DEBUG_ENABLE
-  Serial.begin( 19200 );
+  Serial.begin(DEBUG_SERIAL_BAUD_RATE);
   #endif
 
   analogReference(INTERNAL);
   //Turn on adc (needed to init internal analogReference)
   analogRead(A0);
+
+  // INTERNAL_REFERENCE should be replaced with AIN+
+  // AIN+ -> PE6 pin
+  analogComparator.setOn(AIN0, INTERNAL_REFERENCE);
+
+  //     Turn on ADC again after comparator setup
+  ADCSRA |= 1 << ADEN;
+
+  /* timers setup */
+  timer_1_setup();
+  timer_3_setup();
+
+  digitalWrite(CH_1_OUTPUT, HIGH);
+  digitalWrite(CH_2_OUTPUT, HIGH);
+
+  analogComparator.enableInterrupt(zero_crossing_handler, CHANGE);
 }
 
 void loop() {
