@@ -27,6 +27,10 @@ Modbus slave(BOARD_ID, 0, 0);
 uint16_t ch_1_ctl_remote_sw = 0;
 uint16_t ch_2_ctl_remote_sw = 0;
 
+uint8_t ICR_previous = 0;
+int16_t period = 160;
+uint8_t error = 0;
+
 #ifdef DEBUG_ENABLE
 uint8_t debug_time_counter = 0;
 #endif
@@ -103,10 +107,11 @@ void timer_1_setup() {
 	/* prescaler 1/1024 */
 	/* CSn2:0 = 101 */
 
-	/* Fast PWM , TOP = OCRnA*/
-	TCCR1A |= 1 << WGM11;
+	/* Fast PWM , 8 bit*/
+	TCCR1A |= 1 << WGM10;
+// 	TCCR1A |= 1 << WGM11;
 	TCCR1B |= 1 << WGM12;
-	TCCR1B |= 1 << WGM13;
+// 	TCCR1B |= 1 << WGM13;
 
 	/* Interrupt on Overflow (TOP), and on input capture*/
 	TIMSK1 |= 1 << TOIE1;
@@ -117,12 +122,19 @@ void timer_1_setup() {
 
 /* timer capture event */
 ISR(TIMER1_CAPT_vect){
+	period = ICR1L - ICR_previous;
 
+	if (period > 0) {
+	ICR3L = period;
+	ICR_previous = ICR1L;
+	}
 }
-/* timer overflow */
-ISR(TIMER1_OVF_vect){
-
-}
+// /* timer overflow */
+// ISR(TIMER1_OVF_vect){
+// 	if (input_capture_flag > 0) {
+//
+// 	}
+// }
 
 /* *
  * This timer controls AC phase on channel 1
