@@ -1,5 +1,7 @@
 #include "modbus_slave/ModbusRtu.h"
 #include "Arduino.h"
+#include "analogComp.h"
+#include <util/atomic.h>
 
 #define BOARD_ID 1
 
@@ -27,10 +29,10 @@ Modbus slave(BOARD_ID, 0, 0);
 uint16_t ch_1_ctl_remote_sw = 0;
 uint16_t ch_2_ctl_remote_sw = 0;
 
-uint8_t ICR_previous = 0;
-int16_t period = 160;
-uint8_t error = 0;
+uint16_t ICR_previous = 0;
+uint16_t period = 160;
 
+#define DEBUG_ENABLE
 #ifdef DEBUG_ENABLE
 uint8_t debug_time_counter = 0;
 #endif
@@ -90,7 +92,7 @@ void dump_modbus_data() {
 		Serial.print("reg ");
 		Serial.print(i);
 		Serial.print(": ");
-		Serial.println(au16data[i], BIN);
+		Serial.println(au16data[i], DEC);
 	}
 
 	Serial.println("###################");
@@ -102,19 +104,25 @@ void dump_modbus_data() {
   * todo: switch control pins to control it with 1 timer.
   */
 void timer_1_setup() {
-/* Clear OCnA/OCnB/OCnC on compare match, set OCnA/OCnB/OCnC at TOP */
-// 	TCCR1A |= 1 << COM1A1
 	/* prescaler 1/1024 */
-	/* CSn2:0 = 101 */
+    /* CSn2:0 = 101 */
+    TCCR1B |= 1 << CS12;
+    TCCR1B |= 1 << CS10;
+    TCCR1B &= ~(1 << CS11);
 
-	/* Fast PWM , 8 bit*/
+    /* Fast PWM , TOP = OCIE1A*/
 	TCCR1A |= 1 << WGM10;
-// 	TCCR1A |= 1 << WGM11;
+	TCCR1A |= 1 << WGM11;
 	TCCR1B |= 1 << WGM12;
-// 	TCCR1B |= 1 << WGM13;
+	TCCR1B |= 1 << WGM13;
+
+	ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
+	    OCR1AH = 0xFF;
+        OCR1AL = 0xFF;
+	}
 
 	/* Interrupt on Overflow (TOP), and on input capture*/
-	TIMSK1 |= 1 << TOIE1;
+// 	TIMSK1 |= 1 << TOIE1;
 	TIMSK1 |= 1 << ICIE1;
 	/* Need to enable ACIC in analog comparator */
 	ACSR |= 1 << ACIC;
@@ -122,11 +130,10 @@ void timer_1_setup() {
 
 /* timer capture event */
 ISR(TIMER1_CAPT_vect){
-	period = ICR1L - ICR_previous;
-
-	if (period > 0) {
-	ICR3L = period;
-	ICR_previous = ICR1L;
+ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
+	period = ICR1 - ICR_previous;
+	ICR_previous = ICR1;
+	ICR3 = period;
 	}
 }
 // /* timer overflow */
@@ -146,7 +153,7 @@ void timer_3_setup() {
     	/* CSn2:0 = 101 */
 
     	/* Fast PWM , TOP = ICR*/
-    	TCCR3A |= 1 << WGM30;
+    	TCCR3A &= (1 << WGM30);
     	TCCR3A |= 1 << WGM31;
     	TCCR3B |= 1 << WGM32;
     	TCCR3B |= 1 << WGM33;
@@ -178,6 +185,7 @@ void io_poll() {
   au16data[6] = analogRead(CS_2);
   au16data[7] = analogRead(TS_1);
   au16data[8] = analogRead(TS_2);
+  au16data[9] = period;
 
   if (man_sw_control_ch1 != man_sw_control_ch1_old) {
     digitalWrite(CH_1_CTL, man_sw_control_ch1);
@@ -228,15 +236,22 @@ void io_setup() {
 
 void setup() {
   io_setup();
-  slave.begin( 19200 );
+  slave.begin( 115200 );
   #ifdef DEBUG_ENABLE
-  Serial.begin( 19200 );
+  Serial.begin( 115200 );
   #endif
 
   analogReference(INTERNAL);
   //Turn on adc (needed to init internal analogReference)
   analogRead(A0);
 
+  // INTERNAL_REFERENCE should be replaced with AIN+
+  // AIN+ -> PE6 pin
+  analogComparator.setOn(AIN0, INTERNAL_REFERENCE);
+//   analogComparator.enableInterrupt(zero_crossing_handler, CHANGE);
+
+  //     Turn on ADC again after comparator setup
+  ADCSRA |= 1 << 7;
   timer_1_setup();
   timer_3_setup();
 }
