@@ -31,6 +31,7 @@ uint16_t ch_2_ctl_remote_sw = 0;
 
 uint16_t ICR_previous = 0;
 uint16_t period = 160;
+uint16_t error = 0;
 
 #define DEBUG_ENABLE
 #ifdef DEBUG_ENABLE
@@ -124,17 +125,26 @@ void timer_1_setup() {
 	/* Interrupt on Overflow (TOP), and on input capture*/
 // 	TIMSK1 |= 1 << TOIE1;
 	TIMSK1 |= 1 << ICIE1;
-	/* Need to enable ACIC in analog comparator */
+	/* Need to enable ACIC in analog comparator to trigger timer capture */
 	ACSR |= 1 << ACIC;
 }
 
 /* timer capture event */
 ISR(TIMER1_CAPT_vect){
 ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
-	period = ICR1 - ICR_previous;
-	ICR_previous = ICR1;
-	ICR3 = period;
+	uint16_t new_period = ICR1 - ICR_previous;
+    ICR_previous = ICR1;
+
+    if (new_period > 250){
+        period = new_period;
+        /* todo: include error of timer 3 */
+	    ICR3 = period / 2;
+    }
 	}
+}
+/* analogComparator interrupt */
+void zero_crossing_handler() {
+    TCNT3 = 0;
 }
 // /* timer overflow */
 // ISR(TIMER1_OVF_vect){
@@ -147,20 +157,32 @@ ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
  * This timer controls AC phase on channel 1
  */
 void timer_3_setup() {
-	/* Clear OCnA/OCnB/OCnC on compare match, set OCnA/OCnB/OCnC at TOP */
-    	TCCR3A |= 1 << COM3A1;
     	/* prescaler 1/1024 */
     	/* CSn2:0 = 101 */
+    	TCCR3B |= 1 << CS12;
+        TCCR3B |= 1 << CS10;
+        TCCR3B &= ~(1 << CS11);
 
     	/* Fast PWM , TOP = ICR*/
-    	TCCR3A &= (1 << WGM30);
+    	TCCR3A &= ~(1 << WGM30);
     	TCCR3A |= 1 << WGM31;
     	TCCR3B |= 1 << WGM32;
     	TCCR3B |= 1 << WGM33;
 
+
+	/* Clear OCnA/OCnB/OCnC on compare match, set OCnA/OCnB/OCnC at TOP */
+    	TCCR3A |= 1 << COM3A1;
     	/* Interrupt on Overflow (TOP), OCRnA*/
 //     	TIMSK3 |= 1 << TOIE3
 //     	TIMSK3 |= 1 << OCIE3A
+
+// ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
+// ICR3 = 0x3FFF;
+// }
+    ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
+	    OCR3AH = 0x00;
+        OCR3AL = 0x50;
+	}
 }
 
 void io_poll() {
@@ -173,32 +195,38 @@ void io_poll() {
   status_ch1 = digitalRead(CH_1_OT_LED);
   status_ch1 += digitalRead(CH_1_OC_LED) << 1;
   status_ch1 += man_sw_control_ch1 << 2;
-  status_ch1 += digitalRead(CH_1_CTL) << 3;
+  /* reading this bit causes COM3A1 bit to 0  int timer 3*/
+//   status_ch1 += digitalRead(CH_1_CTL) << 3;
 
   uint8_t status_ch2;
   status_ch2 = digitalRead(CH_2_OT_LED);
   status_ch2 += digitalRead(CH_2_OC_LED) << 1;
   status_ch2 += man_sw_control_ch2 << 2;
-  status_ch2 += digitalRead(CH_2_CTL) << 3;
+//   status_ch2 += digitalRead(CH_2_CTL) << 3;
 
   au16data[5] = analogRead(CS_1);
   au16data[6] = analogRead(CS_2);
   au16data[7] = analogRead(TS_1);
   au16data[8] = analogRead(TS_2);
   au16data[9] = period;
+  au16data[10] = ICR3;
+  au16data[11] = OCR3A;
+  au16data[12] = TCCR3A;
+  au16data[13] = TCCR3B;
+  au16data[14] = TIMSK3;
 
-  if (man_sw_control_ch1 != man_sw_control_ch1_old) {
-    digitalWrite(CH_1_CTL, man_sw_control_ch1);
-  }
-  if (man_sw_control_ch2 != man_sw_control_ch2_old) {
-    digitalWrite(CH_2_CTL, man_sw_control_ch2);
-  }
-  if (ch_1_ctl_remote_sw != au16data[0]) {
-    digitalWrite(CH_1_CTL, au16data[0] == 0);
-  }
-  if (ch_2_ctl_remote_sw != au16data[1]) {
-    digitalWrite(CH_2_CTL, au16data[1] == 0);
-  }
+//   if (man_sw_control_ch1 != man_sw_control_ch1_old) {
+//     digitalWrite(CH_1_CTL, man_sw_control_ch1);
+//   }
+//   if (man_sw_control_ch2 != man_sw_control_ch2_old) {
+//     digitalWrite(CH_2_CTL, man_sw_control_ch2);
+//   }
+//   if (ch_1_ctl_remote_sw != au16data[0]) {
+//     digitalWrite(CH_1_CTL, au16data[0] == 0);
+//   }
+//   if (ch_2_ctl_remote_sw != au16data[1]) {
+//     digitalWrite(CH_2_CTL, au16data[1] == 0);
+//   }
 
   ch_1_ctl_remote_sw = au16data[0];
   ch_2_ctl_remote_sw = au16data[1];
@@ -207,7 +235,7 @@ void io_poll() {
 }
 
 void io_setup() {
-  digitalWrite(CH_1_CTL, HIGH);
+//   digitalWrite(CH_1_CTL, HIGH);
   digitalWrite(CH_2_CTL, HIGH);
   digitalWrite(CH_1_OT_LED, LOW);
   digitalWrite(CH_2_OT_LED, LOW);
@@ -248,12 +276,15 @@ void setup() {
   // INTERNAL_REFERENCE should be replaced with AIN+
   // AIN+ -> PE6 pin
   analogComparator.setOn(AIN0, INTERNAL_REFERENCE);
-//   analogComparator.enableInterrupt(zero_crossing_handler, CHANGE);
 
   //     Turn on ADC again after comparator setup
   ADCSRA |= 1 << 7;
   timer_1_setup();
   timer_3_setup();
+
+  analogComparator.enableInterrupt(zero_crossing_handler, CHANGE);
+  delay(40);
+  analogComparator.disableInterrupt();
 }
 
 void loop() {
