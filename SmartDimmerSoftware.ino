@@ -138,7 +138,7 @@ ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
     if (new_period > 250){
         period = new_period;
         /* todo: include error of timer 3 */
-	    ICR3 = period / 2;
+	    ICR3 = period / 2 - 10;
     }
 	}
 }
@@ -159,9 +159,9 @@ void zero_crossing_handler() {
 void timer_3_setup() {
     	/* prescaler 1/1024 */
     	/* CSn2:0 = 101 */
-    	TCCR3B |= 1 << CS12;
-        TCCR3B |= 1 << CS10;
-        TCCR3B &= ~(1 << CS11);
+    	TCCR3B |= 1 << CS32;
+        TCCR3B |= 1 << CS30;
+        TCCR3B &= ~(1 << CS31);
 
     	/* Fast PWM , TOP = ICR*/
     	TCCR3A &= ~(1 << WGM30);
@@ -212,9 +212,12 @@ void io_poll() {
   au16data[10] = ICR3;
   au16data[11] = OCR3A;
   au16data[12] = TCCR3A;
-  au16data[13] = TCCR3B;
-  au16data[14] = TIMSK3;
-
+  uint16_t trigger_offset = period / 2 - ((period / 2) * au16data[14]) / 100 - 5;
+  ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
+//   OCR3A = ((period / 2) * au16data[13]) / 100 - 5;
+//   OCR3A = ((period / 2) * au16data[14]) / 100 - 5;
+  OCR3A = trigger_offset;
+}
 //   if (man_sw_control_ch1 != man_sw_control_ch1_old) {
 //     digitalWrite(CH_1_CTL, man_sw_control_ch1);
 //   }
@@ -283,8 +286,8 @@ void setup() {
   timer_3_setup();
 
   analogComparator.enableInterrupt(zero_crossing_handler, CHANGE);
-  delay(40);
-  analogComparator.disableInterrupt();
+//   delay(40);
+//   analogComparator.disableInterrupt();
 }
 
 void loop() {
