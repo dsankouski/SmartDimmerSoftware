@@ -12,7 +12,7 @@
 #define TOGGLE_ON_COMPARE_1A_AND_MASK ~(1 << COM3A1)
 #define PRESCALER_MASK_1 (1 << CS10) + (1 << CS12)
 #define WAVEFORM_GENERATOR_MASK_REG_1A ~((1 << WGM10) + (1 << WGM11))
-#define ACO_MASK = 1 << ACO
+#define ACO_MASK 1 << ACO
 
 uint16_t ICR_previous = 0;
 uint16_t period = 312;

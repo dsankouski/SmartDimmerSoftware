@@ -30,6 +30,7 @@
 #define MANUAL_SW_MASK 4
 #define MODBUS_SERIAL_BAUD_RATE 115200
 #define COMPARATOR_OFFSET_ERROR 2
+#define ZERO_CROSSING_LATENCY 9
 
 Modbus slave(BOARD_ID, 0, 0);
 uint8_t is_ch1_on = 0;
@@ -37,6 +38,10 @@ uint8_t is_ch2_on = 0;
 uint16_t ch_1_ctl_remote_sw = 0;
 uint16_t ch_2_ctl_remote_sw = 0;
 
+
+uint16_t high_length = 0;
+uint16_t low_length = 0;
+uint16_t length_previous = 0;
 // uint16_t period = 312;
 uint16_t half_wave_duration = period / 2;
 uint16_t ch_1_trigger_offset = 0xFFFF;
@@ -116,9 +121,8 @@ void zero_crossing_handler() {
 ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
 	uint16_t tcnt3 = TCNT3;
 	uint16_t tcnt1 = TCNT1;
-    OCR3A = tcnt3 + ch_1_trigger_offset + COMPARATOR_OFFSET_ERROR;
-    OCR1A = tcnt1 + ch_2_trigger_offset + COMPARATOR_OFFSET_ERROR;
-    }
+    OCR3A = tcnt3 + ch_1_trigger_offset;
+    OCR1A = tcnt1 + ch_2_trigger_offset;
 
     TCCR3A &= TOGGLE_ON_COMPARE_3A_AND_MASK;
     TCCR1A &= TOGGLE_ON_COMPARE_1A_AND_MASK;
@@ -126,6 +130,15 @@ ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
     TIFR3 |= CLEAR_COMPARE_MATCH_3A_MASK;
     TIMSK3 |= OUTPUT_COMPARE_3A_INT_ENABLE_OR_MASK;
     TIMSK1 |= OUTPUT_COMPARE_1A_INT_ENABLE_OR_MASK;
+
+    if (ACSR & ACO_MASK) {
+                high_length = tcnt3 - length_previous;
+                length_previous = tcnt3;
+           } else {
+                low_length = tcnt3 - length_previous;
+                length_previous = tcnt3;
+           }
+    }
 }
 
 void io_poll() {
@@ -146,13 +159,23 @@ void io_poll() {
 
   au16data[5] = ch_1_trigger_offset;
   au16data[6] = ch_2_trigger_offset;
-  au16data[7] = analogRead(TS_1);
-  au16data[8] = analogRead(TS_2);
+  au16data[7] = high_length;
+  au16data[8] = low_length;
   au16data[9] = period;
-  half_wave_duration = period / 2 - COMPARATOR_OFFSET_ERROR;
+  half_wave_duration = period / 2;
 
   ch_1_trigger_offset = half_wave_duration - (half_wave_duration * au16data[13]) / 100;
   ch_2_trigger_offset = half_wave_duration - (half_wave_duration * au16data[14]) / 100;
+  if (ch_1_trigger_offset > ZERO_CROSSING_LATENCY) {
+    ch_1_trigger_offset -= ZERO_CROSSING_LATENCY;
+  } else {
+    ch_1_trigger_offset = 0;
+  }
+  if (ch_2_trigger_offset > ZERO_CROSSING_LATENCY) {
+    ch_2_trigger_offset -= ZERO_CROSSING_LATENCY;
+  } else {
+    ch_2_trigger_offset = 0;
+  }
 
   if (man_sw_control_ch1 != man_sw_control_ch1_old) {
     is_ch1_on = man_sw_control_ch1;
