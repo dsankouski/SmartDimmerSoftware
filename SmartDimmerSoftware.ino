@@ -46,8 +46,9 @@ uint16_t ch_2_trigger_offset = 0xFFFF;
 
 #define DEBUG_ENABLE
 #ifdef DEBUG_ENABLE
-#define DEBUG_SERIAL_BAUD_RATE 115200
-uint8_t debug_time_counter = 0;
+#define DEBUG_SERIAL_BAUD_RATE 256000
+#define DEBUG_COUNTER_LIMIT 200
+uint16_t debug_time_counter = 0;
 #endif
 
 /*
@@ -145,14 +146,14 @@ void io_poll() {
   status_ch2 += digitalRead(CH_2_OC_LED) << 1;
   status_ch2 += man_sw_control_ch2 << 2;
 
-  au16data[5] = analogRead(CS_1);
-  au16data[6] = analogRead(CS_2);
+  au16data[5] = ch_1_trigger_offset;
+  au16data[6] = ch_2_trigger_offset;
   au16data[7] = analogRead(TS_1);
   au16data[8] = analogRead(TS_2);
   au16data[9] = period;
 
-  ch_1_trigger_offset = period / 2 - ((period / 2) * au16data[13]) / 100 - 5;
-  ch_2_trigger_offset = period / 2 - ((period / 2) * au16data[14]) / 100 - 5;
+  ch_1_trigger_offset = period / 2 - ((period / 2) * au16data[13]) / 100;
+  ch_2_trigger_offset = period / 2 - ((period / 2) * au16data[14]) / 100;
 
   if (man_sw_control_ch1 != man_sw_control_ch1_old) {
     is_ch1_on = man_sw_control_ch1;
@@ -203,10 +204,6 @@ void io_setup() {
 
 void setup() {
   io_setup();
-  slave.begin(MODBUS_SERIAL_BAUD_RATE);
-  #ifdef DEBUG_ENABLE
-  Serial.begin(DEBUG_SERIAL_BAUD_RATE);
-  #endif
 
   analogReference(INTERNAL);
   //Turn on adc (needed to init internal analogReference)
@@ -227,12 +224,19 @@ void setup() {
   digitalWrite(CH_2_OUTPUT, HIGH);
 
   analogComparator.enableInterrupt(zero_crossing_handler, CHANGE);
+//   /* Need to enable ACIC in analog comparator to trigger timer capture */
+//   ACSR |= 1 << ACIC;
+
+  slave.begin(MODBUS_SERIAL_BAUD_RATE);
+  #ifdef DEBUG_ENABLE
+  Serial.begin(DEBUG_SERIAL_BAUD_RATE);
+  #endif
 }
 
 void loop() {
 #ifdef DEBUG_ENABLE
   debug_time_counter++;
-  if (debug_time_counter == 200) {
+  if (debug_time_counter == DEBUG_COUNTER_LIMIT) {
     Serial.write(27);       // ESC command
     Serial.print("[2J");    // clear screen command
     Serial.write(27);
@@ -243,14 +247,14 @@ void loop() {
   slave.poll( au16data, 15);
 
   #ifdef DEBUG_ENABLE
-  if (debug_time_counter == 200) {
+  if (debug_time_counter == DEBUG_COUNTER_LIMIT) {
     dump_modbus_data();
   }
   #endif
   io_poll();
 
   #ifdef DEBUG_ENABLE
-  if (debug_time_counter == 200) {
+  if (debug_time_counter == DEBUG_COUNTER_LIMIT) {
     debug_time_counter = 0;
   }
   #endif
