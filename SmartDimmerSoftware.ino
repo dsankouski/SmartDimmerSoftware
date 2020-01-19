@@ -29,6 +29,7 @@
 
 #define MANUAL_SW_MASK 4
 #define MODBUS_SERIAL_BAUD_RATE 115200
+#define COMPARATOR_OFFSET_ERROR 2
 
 Modbus slave(BOARD_ID, 0, 0);
 uint8_t is_ch1_on = 0;
@@ -36,11 +37,8 @@ uint8_t is_ch2_on = 0;
 uint16_t ch_1_ctl_remote_sw = 0;
 uint16_t ch_2_ctl_remote_sw = 0;
 
-uint16_t high_length =0;
-uint16_t high_length_previous =0;
-uint16_t low_length =0;
-uint16_t low_length_previous =0;
-uint16_t period = 312;
+// uint16_t period = 312;
+uint16_t half_wave_duration = period / 2;
 uint16_t ch_1_trigger_offset = 0xFFFF;
 uint16_t ch_2_trigger_offset = 0xFFFF;
 
@@ -118,8 +116,8 @@ void zero_crossing_handler() {
 ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
 	uint16_t tcnt3 = TCNT3;
 	uint16_t tcnt1 = TCNT1;
-    OCR3A = tcnt3 + ch_1_trigger_offset;
-    OCR1A = tcnt1 + ch_2_trigger_offset;
+    OCR3A = tcnt3 + ch_1_trigger_offset + COMPARATOR_OFFSET_ERROR;
+    OCR1A = tcnt1 + ch_2_trigger_offset + COMPARATOR_OFFSET_ERROR;
     }
 
     TCCR3A &= TOGGLE_ON_COMPARE_3A_AND_MASK;
@@ -151,9 +149,10 @@ void io_poll() {
   au16data[7] = analogRead(TS_1);
   au16data[8] = analogRead(TS_2);
   au16data[9] = period;
+  half_wave_duration = period / 2 - COMPARATOR_OFFSET_ERROR;
 
-  ch_1_trigger_offset = period / 2 - ((period / 2) * au16data[13]) / 100;
-  ch_2_trigger_offset = period / 2 - ((period / 2) * au16data[14]) / 100;
+  ch_1_trigger_offset = half_wave_duration - (half_wave_duration * au16data[13]) / 100;
+  ch_2_trigger_offset = half_wave_duration - (half_wave_duration * au16data[14]) / 100;
 
   if (man_sw_control_ch1 != man_sw_control_ch1_old) {
     is_ch1_on = man_sw_control_ch1;
@@ -225,7 +224,7 @@ void setup() {
 
   analogComparator.enableInterrupt(zero_crossing_handler, CHANGE);
 //   /* Need to enable ACIC in analog comparator to trigger timer capture */
-//   ACSR |= 1 << ACIC;
+  ACSR |= 1 << ACIC;
 
   slave.begin(MODBUS_SERIAL_BAUD_RATE);
   #ifdef DEBUG_ENABLE

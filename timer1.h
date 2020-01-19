@@ -12,10 +12,11 @@
 #define TOGGLE_ON_COMPARE_1A_AND_MASK ~(1 << COM3A1)
 #define PRESCALER_MASK_1 (1 << CS10) + (1 << CS12)
 #define WAVEFORM_GENERATOR_MASK_REG_1A ~((1 << WGM10) + (1 << WGM11))
-//
-//uint16_t ICR_previous = 0;
-//uint16_t period = 312;
-//uint16_t new_period = 0;
+#define ACO_MASK = 1 << ACO
+
+uint16_t ICR_previous = 0;
+uint16_t period = 312;
+uint16_t new_period = 0;
 
 void timer_1_setup() {
 	/* prescaler 1/1024 */
@@ -30,11 +31,11 @@ void timer_1_setup() {
 
 	TCCR1A |= 1 << COM1A0;
 /* Interrupt on input capture*/
-//	TIMSK1 |= 1 << ICIE1;
+	TIMSK1 |= 1 << ICIE1;
 
-//	ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
-//	    ICR_previous = TCNT1;
-//	}
+	ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
+	    ICR_previous = TCNT1;
+	}
 }
 
 ISR(TIMER1_COMPA_vect){
@@ -47,14 +48,15 @@ ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
 
 
 /* timer capture event */
-//ISR(TIMER1_CAPT_vect){
-//ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
-//    uint16_t icr1 = ICR1;
-//	uint16_t new_period = icr1 - ICR_previous;
-//    ICR_previous = icr1;
-//
-//    if (new_period > 250){
-//        period = new_period;
-//    }
-//	}
-//}
+ISR(TIMER1_CAPT_vect){
+ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
+    uint16_t icr1 = ICR1;
+	uint16_t new_period = icr1 - ICR_previous;
+
+    if (new_period > 250){
+        period = new_period;
+    }
+
+    ICR_previous = icr1;
+	}
+}
