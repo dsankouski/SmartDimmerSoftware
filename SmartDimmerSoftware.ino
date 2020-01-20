@@ -44,8 +44,8 @@ uint16_t low_length = 0;
 uint16_t length_previous = 0;
 // uint16_t period = 312;
 uint16_t half_wave_duration = period / 2;
-uint16_t ch_1_trigger_offset = 0xFFFF;
-uint16_t ch_2_trigger_offset = 0xFFFF;
+volatile uint16_t ch_1_trigger_offset = 0xFFFF;
+volatile uint16_t ch_2_trigger_offset = 0xFFFF;
 
 #define DEBUG_ENABLE
 #ifdef DEBUG_ENABLE
@@ -123,11 +123,21 @@ ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
 	uint16_t tcnt1 = TCNT1;
     OCR3A = tcnt3 + ch_1_trigger_offset;
     OCR1A = tcnt1 + ch_2_trigger_offset;
+    }
+
+	if (TIFR1 & COMPARE_MATCH_1A_MASK > 0) {
+        TIFR1 |= COMPARE_MATCH_1A_MASK;
+	} else {
+		TCCR1C |= 1 << FOC1A;
+	}
+	if (TIFR3 & COMPARE_MATCH_3A_MASK > 0) {
+        TIFR3 |= COMPARE_MATCH_3A_MASK;
+	} else {
+		TCCR3C |= 1 << FOC3A;
+	}
 
     TCCR3A &= TOGGLE_ON_COMPARE_3A_AND_MASK;
     TCCR1A &= TOGGLE_ON_COMPARE_1A_AND_MASK;
-    TIFR1 |= CLEAR_COMPARE_MATCH_1A_MASK;
-    TIFR3 |= CLEAR_COMPARE_MATCH_3A_MASK;
     TIMSK3 |= OUTPUT_COMPARE_3A_INT_ENABLE_OR_MASK;
     TIMSK1 |= OUTPUT_COMPARE_1A_INT_ENABLE_OR_MASK;
 
@@ -138,7 +148,6 @@ ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
                 low_length = tcnt3 - length_previous;
                 length_previous = tcnt3;
            }
-    }
 }
 
 void io_poll() {
