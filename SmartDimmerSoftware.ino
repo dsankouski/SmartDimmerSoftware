@@ -123,17 +123,17 @@ ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
 	uint16_t tcnt1 = TCNT1;
     OCR3A = tcnt3 + ch_1_trigger_offset;
     OCR1A = tcnt1 + ch_2_trigger_offset;
-    }
+
+	TCCR1A |= SET_ON_COMPARE_1A_OR_MASK;
+	TCCR3A |= SET_ON_COMPARE_3A_OR_MASK;
+	TCCR1C |= 1 << FOC1A;
+	TCCR3C |= 1 << FOC3A;
 
 	if (TIFR1 & COMPARE_MATCH_1A_MASK > 0) {
         TIFR1 |= COMPARE_MATCH_1A_MASK;
-	} else {
-		TCCR1C |= 1 << FOC1A;
 	}
 	if (TIFR3 & COMPARE_MATCH_3A_MASK > 0) {
         TIFR3 |= COMPARE_MATCH_3A_MASK;
-	} else {
-		TCCR3C |= 1 << FOC3A;
 	}
 
     TCCR3A &= TOGGLE_ON_COMPARE_3A_AND_MASK;
@@ -148,6 +148,7 @@ ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
                 low_length = tcnt3 - length_previous;
                 length_previous = tcnt3;
            }
+    }
 }
 
 void io_poll() {
