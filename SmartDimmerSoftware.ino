@@ -54,6 +54,10 @@ volatile uint16_t ch_2_trigger_offset = 0xFFFF;
 uint16_t debug_time_counter = 0;
 #endif
 
+#define DEBUG_DATA_SIZE 100
+uint16_t debug_data[DEBUG_DATA_SIZE];
+uint8_t debug_counter = 0;
+
 /*
  * Modbus data table
  *
@@ -123,6 +127,9 @@ ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
 	uint16_t tcnt1 = TCNT1;
     OCR3A = tcnt3 + ch_1_trigger_offset;
     OCR1A = tcnt1 + ch_2_trigger_offset;
+
+    if (debug_counter < DEBUG_DATA_SIZE - 1) {
+        debug_data[debug_counter++] = tcnt3;
     }
 
 	if (TIFR1 & COMPARE_MATCH_1A_MASK > 0) {
@@ -148,6 +155,18 @@ ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
                 low_length = tcnt3 - length_previous;
                 length_previous = tcnt3;
            }
+    }
+}
+
+ISR(TIMER3_COMPA_vect){
+ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
+		if (debug_counter < DEBUG_DATA_SIZE - 1) {
+            debug_data[debug_counter++] = TCNT3;
+        }
+        TIMSK3 &= OUTPUT_COMPARE_3A_INT_DISABLE_OR_MASK;
+        TCCR3A |= SET_ON_COMPARE_3A_OR_MASK;
+		OCR3A += 3;
+	}
 }
 
 void io_poll() {
@@ -283,6 +302,14 @@ void loop() {
   }
   #endif
   io_poll();
+
+  if (debug_counter == DEBUG_DATA_SIZE) {
+    for(uint8_t i = 0; i++ ; i < DEBUG_DATA_SIZE - 1) {
+        Serial.print(i);
+        Serial.print(": ");
+        Serial.println(debug_data[i], DEC);
+    }
+  }
 
   #ifdef DEBUG_ENABLE
   if (debug_time_counter == DEBUG_COUNTER_LIMIT) {

@@ -28,11 +28,3 @@ void timer_3_setup() {
 	/* Toggle OCnA/OCnB/OCnC on compare match*/
     	TCCR3A |= 1 << COM3A0;
 }
-
-ISR(TIMER3_COMPA_vect){
-ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
-        TIMSK3 &= OUTPUT_COMPARE_3A_INT_DISABLE_OR_MASK;
-        TCCR3A |= SET_ON_COMPARE_3A_OR_MASK;
-		OCR3A += 3;
-	}
-}
